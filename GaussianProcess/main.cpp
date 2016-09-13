@@ -149,13 +149,19 @@ void main(int argc, char *argv[]) {
 		for (int j = 0; j < n; j++) {
 			double sum = 0;   //二乗和
 			double ip = 0;    //内積(線形項を入れたいときはこれを使おう)
+			double N1 = 0;
+			double N2 = 0;
 			for (int k = 0; k < Fd; k++) {
 				int s = j*Fd + k;
 				sum += (Fl_tr[s] - Fl_te[k])*(Fl_tr[s] - Fl_te[k]);
 				ip += Fl_tr[s] * Fl_te[k];
+				N1 += Fl_tr[s] * Fl_tr[s];
+				N2 += Fl_te[k] * Fl_te[k];
 			}
+			double N1_sq = sqrt(N1);
+			double N2_sq = sqrt(N2);
 			//カーネル関数を変更するときはここを変えよう
-			double ks = input_info.th3*exp(-sum / (2.0*input_info.th1*input_info.th1)) + input_info.th2*ip + input_info.th4;
+			double ks = input_info.th3*exp(-sum / (2.0*input_info.th1*input_info.th1)) + input_info.th2*ip / N1_sq / N2_sq + input_info.th4;
 			k.push_back(ks);
 		}
 		//C算出（β抜き）
@@ -163,14 +169,20 @@ void main(int argc, char *argv[]) {
 			for (int m = 0; m < n; m++) {
 				double sum = 0;   //二乗和
 				double ip = 0;    //内積
+				double N1 = 0;
+				double N2 = 0;
 				for (int k = 0; k < Fd; k++) {
 					int s = j*Fd + k;
 					int t = m*Fd + k;
 					sum += (Fl_tr[s] - Fl_tr[t])*(Fl_tr[s] - Fl_tr[t]);
 					ip += Fl_tr[s] * Fl_tr[t];
+					N1 += Fl_tr[s] * Fl_tr[s];
+					N2 += Fl_tr[t] * Fl_tr[t];
 				}
+				double N1_sq = sqrt(N1);
+				double N2_sq = sqrt(N2);
 				//カーネル関数を変更するときはここを変えよう
-				double ks = input_info.th3*exp(-sum / (2.0*input_info.th1*input_info.th1)) + input_info.th2*ip + input_info.th4;
+				double ks = input_info.th3*exp(-sum / (2.0*input_info.th1*input_info.th1)) + input_info.th2*ip / N1_sq / N2_sq + input_info.th4;
 				Ck.push_back(ks);
 			}
 		}
@@ -179,16 +191,17 @@ void main(int argc, char *argv[]) {
 		for (int k = 0; k < Fd; k++) {
 			c_ip += Fl_te[k] * Fl_te[k];
 		}
+		double  c_ip_sq = sqrt(c_ip);
 		//カーネル関数を変更するときはここを変えよう
 		//ガウシアンカーネルだとここはすべて0になる
-		c = 1 / b + input_info.th2*c_ip + input_info.th4;
+		c = 1 / b + input_info.th2*c_ip / c_ip_sq / c_ip_sq + input_info.th4;
 
 
 		//データ行列をつくる
 		Eigen::MatrixXd C_k = Eigen::Map<Eigen::MatrixXd>(&Ck[0], n, n);
 		Eigen::MatrixXd K = Eigen::Map<Eigen::MatrixXd>(&k[0], 1, n);      //k^T
 		Eigen::MatrixXd K_ = Eigen::Map<Eigen::MatrixXd>(&k[0], n, 1);; //k
-		Eigen::MatrixXd R_train = Eigen::Map<Eigen::MatrixXd>(&Ref_tr[0], Fd, n);
+		Eigen::MatrixXd R_train = Eigen::Map<Eigen::MatrixXd>(&Ref_tr[0], Rd, n);
 		Eigen::MatrixXd Y__ = Eigen::Map<Eigen::MatrixXd>(&Ref_tr[0], Rd, n);
 		Eigen::MatrixXd Y = Y__.transpose();
 		Eigen::MatrixXd R_train_t = R_train.transpose();       //t           
@@ -196,15 +209,15 @@ void main(int argc, char *argv[]) {
 		Eigen::MatrixXd BE = E.array() / b;
 		Eigen::MatrixXd C = C_k + BE;
 		Eigen::MatrixXd C_n = C.inverse();       //Cn^(-1)
-		//データ行列（線形回帰用）
+												 //データ行列（線形回帰用）
 		Eigen::MatrixXd X_0 = Eigen::Map<Eigen::MatrixXd>(&Fl_tr[0], Fd, n);
 		Eigen::MatrixXd X = X.Ones(n, Fd + 1);    //X
 		X.block(0, 1, n, Fd) = X_0.transpose();
 		Eigen::MatrixXd Xt_0 = Eigen::Map<Eigen::MatrixXd>(&Fl_te[0], 1, Fd);
 		Eigen::MatrixXd Xt = Xt.Ones(1, Fd + 1);
 		Xt.block(0, 1, 1, Fd) = Xt_0;   //Xtest
-		
-		//線形回帰分析
+
+										//線形回帰分析
 		Eigen::MatrixXd linear_0 = X.transpose()*X;
 		Eigen::MatrixXd linear = linear_0.inverse()*X.transpose()*Y; //係数算出
 		Eigen::MatrixXd linear_result = Xt*linear;
@@ -222,19 +235,20 @@ void main(int argc, char *argv[]) {
 		std::stringstream dirOUT3;
 		dirOUT << input_info.dir_out << fcase[i] << "/mean";
 		dirOUT2 << input_info.dir_out << fcase[i] << "/var";
-		dirOUT3 << input_info.dir_out << fcase[i] << "/linear";
+		//dirOUT3 << input_info.dir_out << fcase[i] << "/linear";
 		nari::system::make_directry(dirOUT.str());
 		nari::system::make_directry(dirOUT2.str());
 		write_matrix_raw_and_txt(mean, dirOUT.str());
+		write_matrix_raw_and_txt(linear_result, dirOUT3.str());
 		std::ofstream mat_result(dirOUT.str() + ".txt");
 		std::ofstream mat_result2(dirOUT2.str() + ".txt");
-		std::ofstream mat_result3(dirOUT3.str() + ".txt");
+		//std::ofstream mat_result3(dirOUT3.str() + ".txt");
 		for (int j = 0; j < Rd; j++) {
 			mat_result << mean(0, j) << std::endl;
 		}
-		for (int j = 0; j < Rd; j++) {
+		/*for (int j = 0; j < Rd; j++) {
 			mat_result3 << linear_result(0, j) << std::endl;
-		}
+		}*/
 		mat_result2 << var << std::endl;
 	}
 }
