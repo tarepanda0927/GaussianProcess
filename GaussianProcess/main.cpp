@@ -101,7 +101,7 @@ void main(int argc, char *argv[]) {
 	int Fd = input_info.fd;
 	int Rd = input_info.rd;
 	double b = input_info.B;
-
+	std::vector<double> L2error;
 	for (int i = 0; i < fcase.size(); i++) {
 		//ファイル読み込み
 		//成長前形状LS主成分スコア
@@ -110,11 +110,21 @@ void main(int argc, char *argv[]) {
 		// 成長後形状LS主成分スコア
 		std::vector<double> Ref;
 		read_vector(Ref, input_info.dir_score + "Ref/" + rcase[i] + "/mat.raw");
+		//各軸の分散を読み込む
+		std::vector<double> r_cov;
+		std::ifstream covtxt(input_info.dir_score + "Ref/" + rcase[i] + "/eval.txt");
+		std::string buf_co;
+		while (covtxt&& getline(covtxt, buf_co))
+		{
+			r_cov.push_back(stod(buf_co));
+		}
 		//それぞれ学習,テストデータのスコアのみ抜き出す
 		std::vector<double> Fl_tr;
 		std::vector<double> Ref_tr;   //テストの入力
 		std::vector<double> Fl_te;
 		std::vector<double> Ref_te;   //テスト正解出力
+		std::vector<double> Ref_co;   //軸ごとの分散
+		
 		for (int j = 0; j < fcase.size(); j++) {
 			for (int k = 0; k < Fd; k++) {
 				//デバッグの時はここを変更するべし
@@ -221,34 +231,41 @@ void main(int argc, char *argv[]) {
 		Eigen::MatrixXd linear_0 = X.transpose()*X;
 		Eigen::MatrixXd linear = linear_0.inverse()*X.transpose()*Y; //係数算出
 		Eigen::MatrixXd linear_result = Xt*linear;
+
 		//カーネル行列計算
 		//平均（k^T*Cn^(-1)*t）
 		Eigen::MatrixXd mean = K*C_n*R_train_t;
 		//分散（c-k^T*Cn^(-1)*k）
 		Eigen::MatrixXd var_ = K*C_n*K_;
-		std::cout << var_ << std::endl;
 		double v = var_(0, 0);
-		std::cout << v << std::endl;
 		double var = c - v;
 		std::stringstream dirOUT;
 		std::stringstream dirOUT2;
-		std::stringstream dirOUT3;
 		dirOUT << input_info.dir_out << fcase[i] << "/mean";
 		dirOUT2 << input_info.dir_out << fcase[i] << "/var";
-		//dirOUT3 << input_info.dir_out << fcase[i] << "/linear";
 		nari::system::make_directry(dirOUT.str());
 		nari::system::make_directry(dirOUT2.str());
 		write_matrix_raw_and_txt(mean, dirOUT.str());
-		write_matrix_raw_and_txt(linear_result, dirOUT3.str());
 		std::ofstream mat_result(dirOUT.str() + ".txt");
 		std::ofstream mat_result2(dirOUT2.str() + ".txt");
-		//std::ofstream mat_result3(dirOUT3.str() + ".txt");
+		mat_result2 << var << std::endl;
+		//予測結果保存
+		//正規化誤差L2ノルム算出
+		double sum_E = 0;
 		for (int j = 0; j < Rd; j++) {
 			mat_result << mean(0, j) << std::endl;
+			double dev = sqrt(r_cov[j]);
+			double reg_m = mean(0, j) / dev; //正規化後予測スコア
+			double reg_a = Ref_te[j] / dev; //正規化後正解スコア
+			sum_E += (reg_m - reg_a)*(reg_m - reg_a);
 		}
-		/*for (int j = 0; j < Rd; j++) {
-			mat_result3 << linear_result(0, j) << std::endl;
-		}*/
-		mat_result2 << var << std::endl;
+		L2error.push_back(sqrt(sum_E));
+	}
+
+	std::stringstream dirOUT3;
+	dirOUT3 << input_info.dir_out << "L2error";
+	std::ofstream mat_result3(dirOUT3.str() + "_GP.txt");
+	for (int i = 0; i < fcase.size(); i++) {
+		mat_result3 << L2error[i] << std::endl;
 	}
 }
