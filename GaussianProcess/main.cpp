@@ -100,8 +100,9 @@ void main(int argc, char *argv[]) {
 	int n = fcase.size() - 1;
 	int Fd = input_info.fd;
 	int Rd = input_info.rd;
-	double b = input_info.B;
+	
 	std::vector<double> L2error;
+	//leave-one-outループ
 	for (int i = 0; i < fcase.size(); i++) {
 		//ファイル読み込み
 		//成長前形状LS主成分スコア
@@ -118,13 +119,22 @@ void main(int argc, char *argv[]) {
 		{
 			r_cov.push_back(stod(buf_co));
 		}
+		//パラメータを読み込む
+		std::vector<double> Param;
+		std::ifstream paratxt(input_info.dir_out + "parameter_" + fcase[i] + "_GP.txt");
+		std::string buf_co2;
+		while (paratxt&& getline(paratxt, buf_co2))
+		{
+			Param.push_back(stod(buf_co2));
+		}
+		double b = Param[0];
 		//それぞれ学習,テストデータのスコアのみ抜き出す
 		std::vector<double> Fl_tr;
 		std::vector<double> Ref_tr;   //テストの入力
 		std::vector<double> Fl_te;
 		std::vector<double> Ref_te;   //テスト正解出力
 		std::vector<double> Ref_co;   //軸ごとの分散
-		
+
 		for (int j = 0; j < fcase.size(); j++) {
 			for (int k = 0; k < Fd; k++) {
 				//デバッグの時はここを変更するべし
@@ -171,7 +181,9 @@ void main(int argc, char *argv[]) {
 			double N1_sq = sqrt(N1);
 			double N2_sq = sqrt(N2);
 			//カーネル関数を変更するときはここを変えよう
-			double ks = input_info.th3*exp(-sum / (2.0*input_info.th1*input_info.th1)) + input_info.th2*ip / N1_sq / N2_sq + input_info.th4;
+			double ks = Param[3]*exp(-sum / (2.0*Param[1]*Param[1])) + Param[2]*ip / N1_sq / N2_sq + Param[4];
+			//double ks = Param[3]*exp(-sum / (2.0*Param[1]*Param[1])) + Param[4];
+			//double ks = exp(-sum / (2.0*Param[1]*Param[1]));
 			k.push_back(ks);
 		}
 		//C算出（β抜き）
@@ -192,7 +204,9 @@ void main(int argc, char *argv[]) {
 				double N1_sq = sqrt(N1);
 				double N2_sq = sqrt(N2);
 				//カーネル関数を変更するときはここを変えよう
-				double ks = input_info.th3*exp(-sum / (2.0*input_info.th1*input_info.th1)) + input_info.th2*ip / N1_sq / N2_sq + input_info.th4;
+				double ks = Param[3]*exp(-sum / (2.0*Param[1]*Param[1])) + Param[2]*ip / N1_sq / N2_sq + Param[4];
+				//double ks = Param[3]*exp(-sum / (2.0*Param[1]*Param[1])) + Param[4];
+				//double ks = exp(-sum / (2.0*Param[1]*Param[1]));
 				Ck.push_back(ks);
 			}
 		}
@@ -204,7 +218,8 @@ void main(int argc, char *argv[]) {
 		double  c_ip_sq = sqrt(c_ip);
 		//カーネル関数を変更するときはここを変えよう
 		//ガウシアンカーネルだとここはすべて0になる
-		c = 1 / b + input_info.th2*c_ip / c_ip_sq / c_ip_sq + input_info.th4;
+		c = 1 / b + Param[2]*c_ip / c_ip_sq / c_ip_sq + Param[4];
+		//c = 1 / b + Param[4];
 
 
 		//データ行列をつくる
